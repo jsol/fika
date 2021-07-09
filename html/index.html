@@ -1,0 +1,186 @@
+<html>
+
+<head>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbad5">
+    <meta name="msapplication-TileColor" content="#da532c">
+    <meta name="theme-color" content="#ffffff">
+</head>
+
+<body>
+
+    <h3 id="title"></h3>
+
+
+    <div id="members"></div>
+
+    <label for="time">Time:</label> <input type="time" id="time" step="300"></input>
+
+    <button id="call">Call for Fika</button>
+
+    <div>
+        <input type="text" id="identifier"></input>
+        <button id="subscribe">Subscribe</button>
+    </div>
+
+    <button id='not'>Click me</button>
+</body>
+
+</html>
+
+
+<script>
+
+    async function init() {
+        let id
+        if (window.location.hash) {
+            id = window.location.hash.substr(1)
+        } else {
+            const res = await fetch('/api/newid')
+            const body = await res.json()
+            id = body.id
+            console.log('ID', body, id)
+            window.location.hash = '#' + id
+        }
+
+        const res = await fetch(`/api/details/${id}`)
+        const body = await res.json()
+
+        const publicKey = body.key
+        document.getElementById('time').value = body.lastTime
+
+        const list = document.getElementById('members')
+        for (const p of body.participants.sort()) {
+            const name = document.createElement('div')
+            name.textContent = p
+            list.appendChild(name)
+        }
+        let reg = null
+        document.getElementById('subscribe').onclick = () => {
+            const name = document.getElementById('identifier').value.replace(/[^a-z0-9]/gmi, ' ').replace(/\s+/g, ' ')
+
+            if (!name) {
+                return
+            }
+            navigator.serviceWorker.ready.then(serviceWorkerRegistration => {
+                reg = serviceWorkerRegistration
+                return serviceWorkerRegistration.pushManager.getSubscription()
+            })
+                .then(sub => {
+                    if (sub !== null) {
+                        return sub
+                    }
+                    const options = {
+                        userVisibleOnly: true,
+                        applicationServerKey: publicKey
+                    }
+                    return reg.pushManager.subscribe(options)
+                })
+                .then(subscription => {
+                    console.log(subscription)
+                    // Register with server:
+                    const data = {
+                        id: id,
+                        name: document.getElementById('identifier').value,
+                        sub: subscription
+                    }
+                    return fetch(`/api/subscription/${id}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    })
+                })
+                .then(res => res.json())
+                .then(body => {
+                    console.log(body)
+                    const name = document.createElement('div')
+                    name.textContent = body.name
+                    list.appendChild(name)
+
+                    const subs = JSON.parse(localStorage.getItem('subs')) || []
+                    subs.push(body)
+                    localStorage.setItem('subs', JSON.stringify(subs))
+                })
+
+        }
+
+        document.getElementById('call').onclick = () => {
+            const time = document.getElementById('time').value
+            const data = {
+                time: time
+            }
+            fetch(`/api/subscription/${id}/call`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            }).then(res => {
+                console.log('SENT')
+            })
+        }
+    }
+
+
+
+    init()
+    function displayNotification() {
+        if (Notification.permission == 'granted') {
+            console.log('Showing notification')
+            navigator.serviceWorker.getRegistration().then(function (reg) {
+                var options = {
+                    body: 'Here is a notification body!',
+                    icon: 'coffee.png',
+                    vibrate: [100, 50, 100],
+                    data: {
+                        dateOfArrival: Date.now(),
+                        primaryKey: 1
+                    },
+                    actions: [
+                        {
+                            action: 'yes', title: 'Yes',
+                            icon: 'yes.png'
+                        },
+                        {
+                            action: 'no', title: 'No',
+                            icon: 'no.png'
+                        },
+                    ]
+                };
+                reg.showNotification('Hello world!', options);
+            });
+        } else {
+            console.log('No permission')
+        }
+    }
+
+    Notification.requestPermission(function (status) {
+        console.log('Notification permission status:', status);
+    });
+
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function (reg) {
+
+            if (reg.installing) {
+                console.log('Service worker installing');
+            } else if (reg.waiting) {
+                console.log('Service worker installed');
+            } else if (reg.active) {
+                console.log('Service worker active');
+            }
+
+        }).catch(function (error) {
+            // registration failed
+            console.log('Registration failed with ' + error);
+        });
+    }
+
+    const btn = document.getElementById('not')
+    btn.onclick = displayNotification
+</script>
