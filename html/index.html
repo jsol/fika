@@ -14,19 +14,24 @@
 
     <h3 id="title"></h3>
 
-
     <div id="members"></div>
-
-    <label for="time">Time:</label> <input type="time" id="time" step="300"></input>
-
-    <button id="call">Call for Fika</button>
 
     <div>
         <input type="text" id="identifier"></input>
         <button id="subscribe">Subscribe</button>
     </div>
 
-    <button id='not'>Click me</button>
+    <div>
+        <button id="unsubscribe">Unsubscribe</button>
+    </div>
+
+    <div>
+        <label for="time">Time:</label> <input type="time" id="time" step="300"></input>
+        <button id="call">Call for Fika</button>
+    </div>
+
+    <div id="times"></div>
+
 </body>
 
 </html>
@@ -46,6 +51,17 @@
             window.location.hash = '#' + id
         }
 
+        const subs = JSON.parse(localStorage.getItem('active-subs')) || {}
+        let subscribed = false
+        if (subs[id]) {
+            document.getElementById('subscribe').parentNode.style.display = 'none'
+            document.getElementById('unsubscribe').parentNode.style.display = 'block'
+            subscribed = true
+        } else {
+            document.getElementById('unsubscribe').parentNode.style.display = 'none'
+            document.getElementById('subscribe').parentNode.style.display = 'block'
+        }
+
         const res = await fetch(`/api/details/${id}`)
         const body = await res.json()
 
@@ -53,11 +69,64 @@
         document.getElementById('time').value = body.lastTime
 
         const list = document.getElementById('members')
+        list.innerHTML = ''
         for (const p of body.participants.sort()) {
             const name = document.createElement('div')
             name.textContent = p
             list.appendChild(name)
         }
+
+        const times = document.getElementById('times')
+        times.innerHTML = ''
+
+        for (const t of body.times.sort((a, b) => a.timestamp > b.timestamp)) {
+            const occation = document.createElement('div')
+            const header = document.createElement('h3')
+            header.textContent = new Date(t.timestamp).toLocaleString()
+            occation.appendChild(header)
+            for (p of t.participants) {
+                const participant = document.createElement('div')
+                const name = document.createElement('span')
+                const icon = document.createElement('img')
+                icon.src = p.answer + '.png'
+                name.textContent = p.name
+                participant.appendChild(icon)
+                participant.appendChild(name)
+                occation.appendChild(participant)
+            }
+
+            if (subscribed) {
+                const yes = document.createElement('button')
+                const no = document.createElement('button')
+                yes.onclick = () => {
+                    const uuid = subs[id].id
+                    fetch(`/api/calls/${id}/${t.id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ answer: 'yes', uuid: uuid })
+                    }).then(() => init())
+                }
+                yes.textContent = 'Yes!'
+                no.onclick = () => {
+                    const uuid = subs[id].id
+                    fetch(`/api/calls/${id}/${t.id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ answer: 'no', uuid: uuid })
+                    }).then(() => init())
+                }
+                no.textContent = 'No!'
+                occation.appendChild(yes)
+                occation.appendChild(no)
+            }
+
+            times.appendChild(occation)
+        }
+
         let reg = null
         document.getElementById('subscribe').onclick = () => {
             const name = document.getElementById('identifier').value.replace(/[^a-z0-9]/gmi, ' ').replace(/\s+/g, ' ')
@@ -102,9 +171,10 @@
                     name.textContent = body.name
                     list.appendChild(name)
 
-                    const subs = JSON.parse(localStorage.getItem('subs')) || []
-                    subs.push(body)
-                    localStorage.setItem('subs', JSON.stringify(subs))
+                    const subs = JSON.parse(localStorage.getItem('active-subs')) || {}
+                    subs[id] = body
+                    localStorage.setItem('active-subs', JSON.stringify(subs))
+                    init()
                 })
 
         }
@@ -126,39 +196,7 @@
         }
     }
 
-
-
     init()
-    function displayNotification() {
-        if (Notification.permission == 'granted') {
-            console.log('Showing notification')
-            navigator.serviceWorker.getRegistration().then(function (reg) {
-                var options = {
-                    body: 'Here is a notification body!',
-                    icon: 'coffee.png',
-                    vibrate: [100, 50, 100],
-                    data: {
-                        dateOfArrival: Date.now(),
-                        primaryKey: 1
-                    },
-                    actions: [
-                        {
-                            action: 'yes', title: 'Yes',
-                            icon: 'yes.png'
-                        },
-                        {
-                            action: 'no', title: 'No',
-                            icon: 'no.png'
-                        },
-                    ]
-                };
-                reg.showNotification('Hello world!', options);
-            });
-        } else {
-            console.log('No permission')
-        }
-    }
-
     Notification.requestPermission(function (status) {
         console.log('Notification permission status:', status);
     });
@@ -181,6 +219,4 @@
         });
     }
 
-    const btn = document.getElementById('not')
-    btn.onclick = displayNotification
 </script>

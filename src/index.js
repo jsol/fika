@@ -35,6 +35,7 @@ app.get('/api/details/:id', (req, res) => {
         id: req.params.id,
         key: secrets.publicKey,
         participants: [],
+        times: [],
         lastTime: '14:45'
       })
     }
@@ -43,7 +44,8 @@ app.get('/api/details/:id', (req, res) => {
       id: req.params.id,
       key: secrets.publicKey,
       participants: room.participants.map(p => p.name),
-      lastTime: '14:45'
+      times: room.times,
+      lastTime: room.lastTime
     })
   })
 })
@@ -60,8 +62,9 @@ app.post('/api/subscription/:id', (req, res) => {
   fs.readFile(`./data/${id}.json`, 'utf8', (err, data) => {
     if (err) {
       console.log(err)
-      data = `{"id":"${id}", "participants": [], "lastTime": "15:00"}`
+      data = `{"id":"${id}", "participants": [], "times":[], "lastTime": "15:00"}`
     }
+
     const room = JSON.parse(data)
     const participant = {
       id: uuid.v4(),
@@ -78,12 +81,85 @@ app.post('/api/subscription/:id', (req, res) => {
   })
 })
 
+
+function getTime(time) {
+  const timestamp = new Date()
+  timestamp.setMilliseconds(0)
+  timestamp.setSeconds(0)
+  const ts = time.split(':')
+  timestamp.setHours(ts[0])
+  timestamp.setMinutes(ts[1])
+
+  if (timestamp < Date.now()) {
+    // setDate fixes end-of-month, 32/7 => 1/8 etc.
+    timestamp.setDate(timestamp.getDate() + 1)
+  }
+  return timestamp
+}
+
+function getCleanTimeList(list) {
+  if (!list || list.length === 0) {
+    return []
+  }
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 3)
+
+  return list.map(t => t.timestamp >= cutoff ? t : null).filter(t => t != null)
+}
+
+app.put('/api/calls/:roomid/:callid', (req, res) => {
+  const roomid = req.params.roomid.replace(/[^a-z0-9]/gmi, '')
+
+  if (req.body.answer !== 'yes' && req.body.answer !== 'no') {
+    return res.status(400).end()
+  }
+
+  fs.readFile(`./data/${roomid}.json`, 'utf8', (err, data) => {
+    if (err) {
+      console.log(err)
+      return res.status(400).end()
+    }
+
+    const room = JSON.parse(data)
+    const call = room.times.find(t => (t.id === req.params.callid))
+
+    if (!call) {
+      return res.status(400).end()
+    }
+    const user = room.participants.find(u => u.id === req.body.uuid)
+    if (!user) {
+      return res.status(400).end()
+    }
+
+    call.participants.push({name: user.name, answer: req.body.answer})
+    fs.writeFile(`./data/${roomid}.json`, JSON.stringify(room), err => {
+      if (err) {
+        console.log(err)
+        return res.status(500).end()
+      }
+      return res.status(204).end()
+    })
+  })
+})
+
 app.put('/api/subscription/:id/call', (req, res) => {
   const id = req.params.id.replace(/[^a-z0-9]/gmi, '')
   const time = req.body.time
 
   if (!time.match(/^[0-9]{2}:[0-9]{2}$/)) {
     return res.status(400).end()
+  }
+
+  const callid = uuid.v4()
+
+  const timestamp = getTime(time)
+
+  const callDetails = {
+    id: callid,
+    time: time,
+    timestamp: +timestamp,
+    participants: [],
+    room: id
   }
 
   fs.readFile(`./data/${id}.json`, 'utf8', (err, data) => {
@@ -94,12 +170,26 @@ app.put('/api/subscription/:id/call', (req, res) => {
 
     const room = JSON.parse(data)
 
+    room.times = getCleanTimeList(room.times)
+    room.times.push(callDetails)
+    room.lastTime = time
+
+    fs.writeFile(`./data/${id}.json`, JSON.stringify(room), err => {
+      if (err) {
+        console.log(err)
+      }
+    })
+
+    const sendData = JSON.parse(JSON.stringify(callDetails))
+
     for (const p of room.participants) {
       console.log('Sending to ', p.name)
-      webpush.sendNotification(p.sub, 'Time: ' + time).then(r => console.log(r)).catch(err => console.log(err))
+      sendData.uuid = p.id
+      webpush.sendNotification(p.sub, JSON.stringify(sendData))
+        .then(r => console.log(r))
+        .catch(err => console.log(err))
     }
   })
-
 })
 
 app.delete('/api/subscription/:id', (req, res) => {
