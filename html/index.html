@@ -8,30 +8,33 @@
     <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbad5">
     <meta name="msapplication-TileColor" content="#da532c">
     <meta name="theme-color" content="#ffffff">
+    <link rel="stylesheet" type="text/css" href="main.css" />
+
 </head>
 
 <body>
+    <div id="page-container">
+        <div id="main">
+            <h2 id="title"></h2>
 
-    <h3 id="title"></h3>
+            <div id="members"></div>
 
-    <div id="members"></div>
+            <div>
+                <input type="text" id="identifier"></input>
+                <button id="subscribe">Subscribe</button>
+            </div>
 
-    <div>
-        <input type="text" id="identifier"></input>
-        <button id="subscribe">Subscribe</button>
+            <div>
+                <button id="unsubscribe">Unsubscribe</button>
+            </div>
+
+            <div id="times"></div>
+        </div>
+        <div id="call-container">
+            <input type="time" id="time" step="300"></input>
+            <button id="call">Call for Fika</button>
+        </div>
     </div>
-
-    <div>
-        <button id="unsubscribe">Unsubscribe</button>
-    </div>
-
-    <div>
-        <label for="time">Time:</label> <input type="time" id="time" step="300"></input>
-        <button id="call">Call for Fika</button>
-    </div>
-
-    <div id="times"></div>
-
 </body>
 
 </html>
@@ -50,6 +53,9 @@
             console.log('ID', body, id)
             window.location.hash = '#' + id
         }
+
+        document.getElementById('title').textContent = 'Fika room: ' + id
+        document.title = 'Fika room: ' + id
 
         const subs = JSON.parse(localStorage.getItem('active-subs')) || {}
         let subscribed = false
